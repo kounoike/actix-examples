@@ -2,13 +2,7 @@
 //! And manages available rooms. Peers send messages to other peers in same
 //! room through `ChatServer`.
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-};
+use std::collections::{HashMap, HashSet};
 
 use actix::prelude::*;
 use rand::{rngs::ThreadRng, Rng};
@@ -46,6 +40,11 @@ pub struct ClientMessage {
     pub room: String,
 }
 
+/// Get visitor count
+#[derive(Message)]
+#[rtype(result = "usize")]
+pub struct GetVisitorCount;
+
 /// List of available rooms
 pub struct ListRooms;
 
@@ -72,11 +71,11 @@ pub struct ChatServer {
     sessions: HashMap<usize, Recipient<Message>>,
     rooms: HashMap<String, HashSet<usize>>,
     rng: ThreadRng,
-    visitor_count: Arc<AtomicUsize>,
+    visitor_count: usize,
 }
 
 impl ChatServer {
-    pub fn new(visitor_count: Arc<AtomicUsize>) -> ChatServer {
+    pub fn new() -> ChatServer {
         // default room
         let mut rooms = HashMap::new();
         rooms.insert("main".to_owned(), HashSet::new());
@@ -85,7 +84,7 @@ impl ChatServer {
             sessions: HashMap::new(),
             rooms,
             rng: rand::thread_rng(),
-            visitor_count,
+            visitor_count: 0,
         }
     }
 }
@@ -131,8 +130,8 @@ impl Handler<Connect> for ChatServer {
         // auto join session to main room
         self.rooms.entry("main".to_owned()).or_default().insert(id);
 
-        let count = self.visitor_count.fetch_add(1, Ordering::SeqCst);
-        self.send_message("main", &format!("Total visitors {count}"), 0);
+        self.send_message("main", &format!("Total visitors {}", self.visitor_count), 0);
+        self.visitor_count += 1;
 
         // send id back
         id
@@ -211,5 +210,14 @@ impl Handler<Join> for ChatServer {
         self.rooms.entry(name.clone()).or_default().insert(id);
 
         self.send_message(&name, "Someone connected", id);
+    }
+}
+
+/// Get visitor count
+impl Handler<GetVisitorCount> for ChatServer {
+    type Result = usize;
+
+    fn handle(&mut self, _: GetVisitorCount, _: &mut Context<Self>) -> Self::Result {
+        self.visitor_count
     }
 }

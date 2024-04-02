@@ -1,10 +1,4 @@
-use std::{
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-    time::Instant,
-};
+use std::time::Instant;
 
 use actix::*;
 use actix_files::{Files, NamedFile};
@@ -40,8 +34,8 @@ async fn chat_route(
 }
 
 /// Displays state
-async fn get_count(count: web::Data<AtomicUsize>) -> impl Responder {
-    let current_count = count.load(Ordering::SeqCst);
+async fn get_count(srv: web::Data<Addr<server::ChatServer>>) -> impl Responder {
+    let current_count = srv.send(server::GetVisitorCount).await.unwrap();
     format!("Visitors: {current_count}")
 }
 
@@ -49,18 +43,13 @@ async fn get_count(count: web::Data<AtomicUsize>) -> impl Responder {
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
-    // set up applications state
-    // keep a count of the number of visitors
-    let app_state = Arc::new(AtomicUsize::new(0));
-
     // start chat server actor
-    let server = server::ChatServer::new(app_state.clone()).start();
+    let server = server::ChatServer::new().start();
 
     log::info!("starting HTTP server at http://localhost:8080");
 
     HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::from(app_state.clone()))
             .app_data(web::Data::new(server.clone()))
             .service(web::resource("/").to(index))
             .route("/count", web::get().to(get_count))
